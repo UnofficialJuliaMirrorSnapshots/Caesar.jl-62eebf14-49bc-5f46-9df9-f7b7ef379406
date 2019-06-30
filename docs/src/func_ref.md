@@ -56,6 +56,8 @@ approxCliqMarginalUp!
 approxConv
 areCliqChildrenNeedDownMsg
 areCliqVariablesAllMarginalized
+asyncTreeInferUp!
+attemptTreeSimilarClique
 batchSolve!
 blockCliqUntilChildrenHaveUpStatus
 buildSubgraphFromLabels
@@ -91,12 +93,12 @@ findRelatedFromPotential
 fmcmc!
 getCliq
 getCliqChildMsgsUp
+getCliqDownMsgsAfterDownSolve
 getCliqMsgsDown
 getCliqMsgsUp
 getCliqParentMsgDown
+getCliqSiblings
 getCliqSolveHistory
-getCurrentWorkspaceFactors
-getCurrentWorkspaceVariables
 getCliq
 getCliqOrderUpSolve
 getCliqAllVarIds
@@ -112,6 +114,8 @@ getCliqStatusUp
 getCliqVarIdsPriors
 getCliqVars
 getCliqVarSingletons
+getCurrentWorkspaceFactors
+getCurrentWorkspaceVariables
 getData
 getFactor
 getKDE
@@ -126,6 +130,7 @@ getVariable
 getVertKDE
 getUpMsgs
 getDwnMsgs
+hasCliq
 hasOrphans
 inferOverTree!
 inferOverTreeR!
@@ -187,4 +192,5 @@ writeGraphPdf
 resetVariableAllInitializations!
 showFactor
 showVariable
+solveTree!
 ```

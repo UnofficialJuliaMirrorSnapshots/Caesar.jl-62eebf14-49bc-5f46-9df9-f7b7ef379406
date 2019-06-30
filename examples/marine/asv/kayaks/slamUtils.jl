@@ -37,7 +37,7 @@ function sanitycheck_nav(navdata)
 end
 
 """
-    $(TYPEDSIGNATURES)
+    $(SIGNATURES)
 
 Load hydrophone waveform data from hard drive, after it has been processed from MOOS [a/b]log.  Processing from MOOS format can be done according to scripts/parseData.py -- Mei says so, call on @mc2922 if you can't find it...
 
@@ -84,7 +84,7 @@ function cumulativeDrift!(cdata::AbstractArray,cstart::Array,σ::Array)
     nothing
 end
 
-function addsascluster_velpt!(fg::FactorGraph,
+function addsascluster_velpt!(fg::G,
                               poses::Vector{Symbol},
                               beacon::Symbol,
                               sasframes::Array{Int},
@@ -93,7 +93,7 @@ function addsascluster_velpt!(fg::FactorGraph,
                               element::Int=2,
                               autoinit::Bool=false,
                               datadir::String="/media/data1/data/kayaks/20_gps_pos",
-                              N::Int=100  )
+                              N::Int=100  ) where G <: AbstractDFG
 
     if length(sasframes) != length(poses)
         error("Frames and Poses are different lengths")
@@ -123,8 +123,8 @@ function addsascluster_velpt!(fg::FactorGraph,
 
   pp = DynPoint2VelocityPrior(MvNormal(dpμ,dpσ))
   addFactor!(fg, [poses[1];], pp, autoinit=true)
-  IncrementalInference.doautoinit!(fg,[getVert(fg,poses[1])])
-  setValKDE!(getVert(fg,poses[1]),kde!(getSample(getfnctype(getVert(fg, Symbol("$(poses[1])f1"),nt=:fnc)),N)[1]))
+  IncrementalInference.doautoinit!(fg,[getVariable(fg,poses[1])])
+  setValKDE!(getVariable(fg,poses[1]),kde!(getSample(getfnctype(getFactor(fg, Symbol("$(poses[1])f1"))),N)[1]))
 
   #Add odo factors
   for i in 2:numelems
@@ -134,11 +134,11 @@ function addsascluster_velpt!(fg::FactorGraph,
       dpσ = diagm([0.5;0.5;0.1;0.1].^2)
       vp = VelPoint2VelPoint2(MvNormal(dpμ,dpσ))
       addFactor!(fg, [poses[i-1];poses[i]], vp, autoinit=true)
-      IncrementalInference.doautoinit!(fg,[getVert(fg,poses[i])])
+      IncrementalInference.doautoinit!(fg,[getVariable(fg,poses[i])])
       #factorsym = Symbol("$(poses[i-1])$(poses[i])f1")
-      #setValKDE!(getVert(fg,poses[i]),kde!(getSample(getfnctype(getVert(fg, factorsym,nt=:fnc)),N)[1]))
+      #setValKDE!(getVariable(fg,poses[i]),kde!(getSample(getfnctype(getVariable(fg, factorsym,nt=:fnc)),N)[1]))
       @show hackinit = ones(4,N).*[dposData[i-1,:];xdotp;ydotp] + rand(MvNormal(dpμ,dpσ),N)
-      setVal!(getVert(fg,poses[i]),hackinit)
+      setVal!(getVariable(fg,poses[i]),hackinit)
   end
 
   sas2d = prepareSAS2DFactor(numelems, waveformData, rangemodel=:Correlator)
@@ -150,7 +150,7 @@ end
 
 #
 
-function addsascluster_only_gps!(fg::FactorGraph,
+function addsascluster_only_gps!(fg::G,
                                  poses::Vector{Symbol},
                                  beacon::Symbol,
                                  sasframes::Array{Int};
@@ -158,7 +158,7 @@ function addsascluster_only_gps!(fg::FactorGraph,
                                  datadir::String="/media/data1/data/kayaks/20_gps_pos",
                                  element::Int=2,
                                  autoinit::Bool=false,
-                                 N::Int=100  )
+                                 N::Int=100  ) where G <: AbstractDFG
 
   # "/media/data1/data/kayaks/20_parsed" this data is windowed 10 elements referenced to the first
   # get position data
@@ -182,7 +182,7 @@ function addsascluster_only_gps!(fg::FactorGraph,
     pp = PriorPoint2(MvNormal(posData[count,:], rtkCov) )
     addFactor!(fg, [sym;], pp, autoinit=true)
     IncrementalInference.doautoinit!(fg,sym)
-    setValKDE!(getVert(fg,sym),kde!(getSample(getfnctype(getVert(fg, Symbol("$(sym)f1"),nt=:fnc)),N)[1]))
+    setValKDE!(getVariable(fg,sym),kde!(getSample(getfnctype(getFactor(fg, Symbol("$(sym)f1"))),N)[1]))
   end
 
   sas2d = prepareSAS2DFactor(numelems, waveformData, rangemodel=:Correlator)
@@ -191,10 +191,16 @@ function addsascluster_only_gps!(fg::FactorGraph,
   nothing
 end
 
-function approxConvFwdBFRaw(fg, poses, beacon, origin, scale, snrfloor; N::Int=100)
+function approxConvFwdBFRaw(fg,
+                            poses,
+                            beacon,
+                            origin,
+                            scale,
+                            snrfloor;
+                            N::Int=100  )
   #
   fctsym = Symbol(string(beacon,poses...,:f1))
-  sas2d = IncrementalInference.getfnctype(getVert(fg, fctsym, nt=:fnc))
+  sas2d = IncrementalInference.getfnctype(getFactor(fg, fctsym))
   sas2d.debugging = true
   for ti in 1:Threads.nthreads() reset!(sas2d.threadreuse[ti].dbg) end
   predL1 = IncrementalInference.approxConv(fg, fctsym, beacon, N=N)
@@ -217,7 +223,7 @@ function approxConvFwdBFRaw(fg, poses, beacon, origin, scale, snrfloor; N::Int=1
 
   circ_avg_beam = zeros(2,length(avg_beam))
   count = 0
-  for th in linspace(0,2pi,length(avg_beam))
+  for th in range(0,2pi,length=length(avg_beam))
     count += 1
     circ_avg_beam[:,count] = R(th)*scale*[avg_beam[count];0.0]+origin
   end
@@ -225,11 +231,68 @@ function approxConvFwdBFRaw(fg, poses, beacon, origin, scale, snrfloor; N::Int=1
   allbeams
 end
 
-function approxConvFwdBFlayer(fg, poses, beacon, origin, scale, snrfloor; N::Int=100)
+function approxConvFwdBFlayer(fg,
+                              poses,
+                              beacon,
+                              origin,
+                              scale,
+                              snrfloor::Float64=0.0;
+                              N::Int=100  )
   #
   circ_avg_beam = approxConvFwdBFRaw(fg, poses, beacon, origin, scale, snrfloor, N=N)
 
   plPica = Gadfly.layer(x=circ_avg_beam[1,:], y=circ_avg_beam[2,:], Geom.path(),   Theme(default_color=colorant"magenta", line_width=2pt))
 
   plPica
+end
+
+"""
+    $SIGNATURES
+
+Plot side by side pair of poses and beacon for a particular SAS factor.
+
+Notes:
+- Specify non-default `filepath<:String`
+- can show pdf via evince if `show::Bool`
+"""
+function plotSASPair(fg::G,
+                     fsym::Symbol;
+                     show::Bool=true,
+                     filepath::AS="/tmp/test.pdf") where {G <: AbstractDFG, AS <: AbstractString}
+    #
+    PL = [];
+
+    @show fsym
+    @show vars = lsf(fg, fsym)
+    beac = vars[1]
+
+    for var in vars[2:end]
+        X1 = getVal(getVariable(fg, var))
+        push!(PL, layer(x=X1[1,:],y=X1[2,:], Geom.histogram2d))
+    end
+
+    # push!(PL, approxConvFwdBFlayer(fg, poses, :l1, posData[1,:], 2000 ))
+
+    pl11 = Gadfly.plot(PL...);
+    # pl.coord = Coord.Cartesian(xmin=10,xmax=30,ymin=-60,ymax=-45)
+
+    pl21 = plotKDE(fg, vars[2:end], levels=1, dims=[1;2])
+
+    L1v = getVariable(fg, beac)
+    L1 = getVal(L1v)
+    pl12 = Gadfly.plot(x=L1[1,:],y=L1[2,:], Geom.histogram2d)
+
+    pl22 = plotKDE(getKDE(L1v), levels=3)
+
+    # stack all images together
+    plT = Gadfly.hstack(pl11,pl12)
+    plB = Gadfly.hstack(pl21,pl22)
+    plA = Gadfly.vstack(plT, plB)
+
+    # if the user wants to see a file rendering
+    if show
+      plA |> PDF(filepath);  @async run(`evince $filepath`)
+    end
+
+    plA
 end
